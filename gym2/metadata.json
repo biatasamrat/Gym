@@ -1,6 +1,0 @@
-{
-  "name": "FitFlow - Gym Management System",
-  "description": "Comprehensive Gym Management System for Admins and Members featuring duration-based subscriptions, automated payment renewal reminders, usage history, and Tribhuvan University project documentation.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
