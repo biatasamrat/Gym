@@ -481,7 +481,7 @@ function GymAppContent() {
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
-        {/* Logged in User Context Banner */}
+        {/* Welcome Bar */}
         <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center space-x-3">
             <div
@@ -492,9 +492,9 @@ function GymAppContent() {
               {user.role === 'admin' ? <ShieldCheck className="w-5 h-5" /> : <UserCheck className="w-5 h-5" />}
             </div>
             <div>
-              <div className="text-xs text-slate-500">Authenticated Session via Supabase Auth</div>
+              <div className="text-xs text-slate-500">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
               <div className="text-sm font-bold text-slate-900">
-                {user.fullName} <span className="font-normal text-slate-500">({user.email})</span>
+                Welcome back, {user.fullName} <span className="font-normal text-slate-500">({user.email})</span>
               </div>
             </div>
           </div>
@@ -502,18 +502,18 @@ function GymAppContent() {
           <div className="flex items-center space-x-2 text-xs font-semibold">
             {user.role === 'admin' ? (
               <span className="px-3 py-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-xl">
-                Full Admin Operational Access
+                Administrator
               </span>
             ) : (
               <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl">
-                Personal Member Portal ({user.memberCode || 'Pending'})
+                Member ID: {user.memberCode || 'Pending'}
               </span>
             )}
           </div>
         </div>
 
         {isFetching ? (
-           <div className="text-center text-slate-500 py-12">Syncing data with Supabase...</div>
+           <div className="text-center text-slate-500 py-12">Loading data...</div>
         ) : (
           <>
             <Routes>
@@ -595,11 +595,9 @@ function GymAppContent() {
           <div className="flex items-center space-x-2">
             <Dumbbell className="w-4 h-4 text-blue-500" />
             <span className="font-bold text-slate-200">FitFlow Gym Management System</span>
-            <span>•</span>
-            <span>Supabase Role-Based Auth Portal</span>
           </div>
           <p className="text-slate-500">
-            1M, 3M, 6M, 12M Subscription Plans • AI Fitness & Workout Assistant.
+            © {new Date().getFullYear()} FitFlow • 1M, 3M, 6M, 12M Subscription Plans
           </p>
         </div>
       </footer>
