@@ -64,10 +64,10 @@ export const MemberDashboard: React.FC<MemberDashboardProps> = ({
   };
 
   // Calculate days remaining
-  const endDate = new Date(activeMember.subscriptionEndDate || '2026-11-01');
+  const endDate = activeMember.subscriptionEndDate ? new Date(activeMember.subscriptionEndDate) : null;
   const today = new Date();
-  const diffTime = endDate.getTime() - today.getTime();
-  const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffTime = endDate ? endDate.getTime() - today.getTime() : null;
+  const daysRemaining = diffTime !== null ? Math.ceil(diffTime / (1000 * 60 * 60 * 24)) : null;
 
   const memberCheckIns = checkIns.filter((c) => c.memberId === activeMember.id);
   const memberPayments = payments.filter((p) => p.memberId === activeMember.id);
@@ -133,19 +133,23 @@ export const MemberDashboard: React.FC<MemberDashboardProps> = ({
 
           <div>
             <div className="flex items-baseline space-x-2">
-              <span className="text-4xl font-extrabold text-slate-900">{daysRemaining > 0 ? daysRemaining : 0}</span>
+              <span className="text-4xl font-extrabold text-slate-900">
+                {daysRemaining !== null ? (daysRemaining > 0 ? daysRemaining : 0) : '—'}
+              </span>
               <span className="text-sm font-semibold text-slate-500">Days Remaining</span>
             </div>
-            <p className="text-xs text-slate-500 mt-1">End Date: {activeMember.subscriptionEndDate}</p>
+            <p className="text-xs text-slate-500 mt-1">
+              End Date: {activeMember.subscriptionEndDate || 'Not yet set'}
+            </p>
           </div>
 
           <div className="space-y-2">
             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
               <div
                 className={`h-2.5 rounded-full ${
-                  daysRemaining <= 7 ? 'bg-amber-500' : daysRemaining <= 0 ? 'bg-rose-500' : 'bg-blue-600'
+                  daysRemaining === null ? 'bg-slate-300' : daysRemaining <= 7 ? 'bg-amber-500' : daysRemaining <= 0 ? 'bg-rose-500' : 'bg-blue-600'
                 }`}
-                style={{ width: `${Math.min(100, Math.max(5, (daysRemaining / 90) * 100))}%` }}
+                style={{ width: daysRemaining !== null ? `${Math.min(100, Math.max(5, (daysRemaining / 90) * 100))}%` : '5%' }}
               />
             </div>
             <button
@@ -167,14 +171,16 @@ export const MemberDashboard: React.FC<MemberDashboardProps> = ({
 
           <div>
             <h3 className="text-xl font-bold text-slate-900 uppercase tracking-wide">
-              {activeMember.currentDuration.replace('_', ' ')}
+              {activeMember.currentDuration ? activeMember.currentDuration.replace(/_/g, ' ') : 'No Plan Yet'}
             </h3>
             <p className="text-xs text-slate-500 mt-1">Full Gym Access + Workout Library</p>
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-            <span>Started: {activeMember.subscriptionStartDate}</span>
-            <span className="font-bold text-slate-900">Active</span>
+            <span>Started: {activeMember.subscriptionStartDate || 'Not yet set'}</span>
+            <span className={`font-bold ${activeMember.subscriptionStartDate ? 'text-emerald-600' : 'text-amber-600'}`}>
+              {activeMember.subscriptionStartDate ? 'Active' : 'Pending Setup'}
+            </span>
           </div>
         </div>
 
@@ -285,11 +291,13 @@ export const MemberDashboard: React.FC<MemberDashboardProps> = ({
             <div className="space-y-2 text-xs text-slate-700">
               <div className="flex justify-between py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Gender & Age:</span>
-                <span className="font-semibold">{activeMember.gender}, {activeMember.age} yrs</span>
+                <span className="font-semibold">
+                  {[activeMember.gender, activeMember.age ? `${activeMember.age} yrs` : null].filter(Boolean).join(', ') || 'Not provided'}
+                </span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Emergency Contact:</span>
-                <span className="font-semibold text-slate-900">{activeMember.emergencyContact}</span>
+                <span className="font-semibold text-slate-900">{activeMember.emergencyContact || 'Not provided'}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Fitness Goal:</span>
