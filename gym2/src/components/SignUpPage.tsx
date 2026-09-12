@@ -12,11 +12,11 @@ export const SignUpPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
 
-    const res = registerUser(email, password, fullName);
+    const res = await registerUser(email, password, fullName);
     if (!res.success && res.error) {
       setErrorMessage(res.error);
     }
