@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { User as AuthUser } from '@supabase/supabase-js';
 
 export interface User {
   id: string;
@@ -8,189 +10,181 @@ export interface User {
   memberCode?: string;
 }
 
-export interface UserAccount {
-  email: string;
-  password: string;
-  fullName: string;
-  role: 'admin' | 'member';
-  memberCode?: string;
-}
-
-// Initial registered users database (Supabase table simulation / persistence)
-const DEFAULT_ACCOUNTS: UserAccount[] = [
-  {
-    email: 'admin@fitflow.com',
-    password: 'admin123',
-    fullName: 'Gym Admin',
-    role: 'admin',
-  },
-  {
-    email: 'admin@gmail.com',
-    password: 'admin123',
-    fullName: 'System Administrator',
-    role: 'admin',
-  },
-  {
-    email: 'biatasamrat31@gmail.com',
-    password: 'member123',
-    fullName: 'Kiran Shrestha',
-    role: 'member',
-    memberCode: 'FF-1005',
-  },
-  {
-    email: 'aarav.sharma@gmail.com',
-    password: 'member123',
-    fullName: 'Aarav Sharma',
-    role: 'member',
-    memberCode: 'FF-1001',
-  },
-  {
-    email: 'sita.adhikari@yahoo.com',
-    password: 'member123',
-    fullName: 'Sita Adhikari',
-    role: 'member',
-    memberCode: 'FF-1002',
-  },
-];
-
 interface AuthContextType {
   user: User | null;
-  loginWithCredentials: (email: string, pass: string) => { success: boolean; error?: string; user?: User };
-  registerUser: (email: string, pass: string, fullName: string) => { success: boolean; error?: string; user?: User };
+  loginWithCredentials: (email: string, pass: string) => Promise<{ success: boolean; error?: string; user?: User }>;
+  registerUser: (email: string, pass: string, fullName: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   logout: () => void;
   isSupabaseConnected: boolean;
-  accounts: UserAccount[];
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  loginWithCredentials: () => ({ success: false }),
-  registerUser: () => ({ success: false }),
+  loginWithCredentials: async () => ({ success: false }),
+  registerUser: async () => ({ success: false }),
   logout: () => {},
-  isSupabaseConnected: false,
-  accounts: [],
+  isSupabaseConnected: isSupabaseConfigured,
+  isLoading: true,
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [accounts, setAccounts] = useState<UserAccount[]>(() => {
-    const saved = localStorage.getItem('fitflow_accounts');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (e) {
-        // fallback
-      }
-    }
-    return DEFAULT_ACCOUNTS;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('fitflow_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
+  // Fetch the extended profile data from the profiles table
+  const fetchProfile = async (authUser: AuthUser): Promise<User | null> => {
+    if (!supabase) return null;
+    
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role, member_code')
+        .eq('id', authUser.id)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
         return null;
       }
+
+      return {
+        id: data.id,
+        email: data.email,
+        fullName: data.full_name,
+        role: data.role as 'admin' | 'member',
+        memberCode: data.member_code,
+      };
+    } catch (err) {
+      console.error('Unexpected error fetching profile:', err);
+      return null;
     }
-    // Default logged-in user as member for preview convenience
-    return {
-      id: 'm-5',
-      email: 'biatasamrat31@gmail.com',
-      fullName: 'Kiran Shrestha',
-      role: 'member',
-      memberCode: 'FF-1005',
-    };
-  });
+  };
 
-  const loginWithCredentials = (email: string, pass: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPass = pass.trim();
+  useEffect(() => {
+    let mounted = true;
 
-    // Search in user database (Supabase / Local DB)
-    const matchedAccount = accounts.find(
-      (acc) => acc.email.toLowerCase() === cleanEmail
-    );
-
-    if (!matchedAccount) {
-      // Check if it's admin pattern or create on the fly if needed for fallback
-      if (cleanEmail.includes('admin') && cleanPass === 'admin123') {
-        const adminUser: User = {
-          id: 'admin-1',
-          email: cleanEmail,
-          fullName: 'Gym Admin',
-          role: 'admin',
-        };
-        setUser(adminUser);
-        localStorage.setItem('fitflow_user', JSON.stringify(adminUser));
-        return { success: true, user: adminUser };
+    async function getInitialSession() {
+      if (!supabase) {
+        setIsLoading(false);
+        return;
       }
 
-      return { success: false, error: 'Account not found. Please check your email or register.' };
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.user && mounted) {
+        const profile = await fetchProfile(session.user);
+        if (mounted) setUser(profile);
+      }
+      if (mounted) setIsLoading(false);
     }
 
-    if (matchedAccount.password !== cleanPass) {
-      return { success: false, error: 'Incorrect password. Please try again.' };
+    getInitialSession();
+
+    let authListener: { subscription: { unsubscribe: () => void } } | null = null;
+    
+    if (supabase) {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!mounted) return;
+        
+        if (event === 'SIGNED_IN' && session?.user) {
+          const profile = await fetchProfile(session.user);
+          setUser(profile);
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+        }
+      });
+      authListener = data;
     }
 
-    // Role is automatically retrieved from the matched database record
-    const loggedUser: User = {
-      id: matchedAccount.role === 'admin' ? 'admin-1' : `user-${Date.now()}`,
-      email: matchedAccount.email,
-      fullName: matchedAccount.fullName,
-      role: matchedAccount.role,
-      memberCode: matchedAccount.memberCode || (matchedAccount.role === 'member' ? 'FF-1005' : undefined),
+    return () => {
+      mounted = false;
+      if (authListener?.subscription) {
+        authListener.subscription.unsubscribe();
+      }
     };
+  }, []);
 
-    setUser(loggedUser);
-    localStorage.setItem('fitflow_user', JSON.stringify(loggedUser));
-    return { success: true, user: loggedUser };
+  const loginWithCredentials = async (email: string, pass: string) => {
+    if (!supabase) return { success: false, error: 'Supabase is not connected. Check .env' };
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: pass,
+      });
+
+      if (error) throw error;
+      
+      if (data.user) {
+        const profile = await fetchProfile(data.user);
+        return { success: true, user: profile || undefined };
+      }
+      
+      return { success: false, error: 'Unknown error occurred during login.' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Login failed' };
+    }
   };
 
-  const registerUser = (email: string, pass: string, fullName: string) => {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPass = pass.trim();
+  const registerUser = async (email: string, pass: string, fullName: string) => {
+    if (!supabase) return { success: false, error: 'Supabase is not connected. Check .env' };
 
-    if (!cleanEmail || !cleanPass || !fullName) {
-      return { success: false, error: 'Please fill in all fields.' };
+    try {
+      // 1. Sign up the user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password: pass,
+      });
+
+      if (authError) throw authError;
+      
+      if (!authData.user) {
+         return { success: false, error: 'Signup succeeded but no user was returned.' };
+      }
+
+      // 2. Create the profile record
+      const memberCode = `FF-${Math.floor(1000 + Math.random() * 9000)}`;
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: authData.user.id,
+        email: email,
+        full_name: fullName,
+        role: 'member', // Default to member. Promote to admin via SQL.
+        member_code: memberCode,
+        payment_status: 'pending',
+        amount_due: 0
+      });
+
+      if (profileError) {
+         console.error('Profile creation error:', profileError);
+         // Note: The auth user exists, but profile failed. 
+         // In a real app, you might want to handle this edge case more robustly.
+         return { success: false, error: 'Account created, but failed to setup profile.' };
+      }
+
+      const profile: User = {
+        id: authData.user.id,
+        email,
+        fullName,
+        role: 'member',
+        memberCode
+      };
+
+      // Since we just signed up, auth state change will trigger SIGNED_IN.
+      // But we can eagerly set it here too.
+      setUser(profile);
+      
+      return { success: true, user: profile };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Registration failed' };
     }
-
-    const exists = accounts.some((acc) => acc.email.toLowerCase() === cleanEmail);
-    if (exists) {
-      return { success: false, error: 'Account already exists with this email address.' };
-    }
-
-    const isRoleAdmin = cleanEmail.includes('admin');
-    const newAccount: UserAccount = {
-      email: cleanEmail,
-      password: cleanPass,
-      fullName: fullName.trim(),
-      role: isRoleAdmin ? 'admin' : 'member',
-      memberCode: isRoleAdmin ? undefined : `FF-${Math.floor(1000 + Math.random() * 9000)}`,
-    };
-
-    const updatedAccounts = [newAccount, ...accounts];
-    setAccounts(updatedAccounts);
-    localStorage.setItem('fitflow_accounts', JSON.stringify(updatedAccounts));
-
-    const loggedUser: User = {
-      id: newAccount.role === 'admin' ? 'admin-1' : `user-${Date.now()}`,
-      email: newAccount.email,
-      fullName: newAccount.fullName,
-      role: newAccount.role,
-      memberCode: newAccount.memberCode,
-    };
-
-    setUser(loggedUser);
-    localStorage.setItem('fitflow_user', JSON.stringify(loggedUser));
-
-    return { success: true, user: loggedUser };
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setUser(null);
-    localStorage.removeItem('fitflow_user');
   };
 
   return (
@@ -200,8 +194,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginWithCredentials,
         registerUser,
         logout,
-        isSupabaseConnected: false,
-        accounts,
+        isSupabaseConnected: isSupabaseConfigured,
+        isLoading,
       }}
     >
       {children}
@@ -210,4 +204,3 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useAuth = () => useContext(AuthContext);
-

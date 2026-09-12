@@ -1,16 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Dumbbell, ArrowRight, Lock, Mail, User, AlertCircle } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 
-interface SignUpPageProps {
-  onSwitchToLogin?: () => void;
-  onNavigateToLogin?: () => void;
-  onOpenSupabaseModal?: () => void;
-}
-
-export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin, onNavigateToLogin }) => {
-  const handleLoginClick = onSwitchToLogin || onNavigateToLogin || (() => {});
-  const { registerUser } = useAuth();
+export const SignUpPage: React.FC = () => {
+  const { registerUser, user } = useAuth();
+  const navigate = useNavigate();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -26,6 +21,11 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin, onNavig
       setErrorMessage(res.error);
     }
   };
+
+  if (user) {
+    navigate('/');
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -103,12 +103,11 @@ export const SignUpPage: React.FC<SignUpPageProps> = ({ onSwitchToLogin, onNavig
 
         <div className="text-center pt-2 text-xs text-slate-500">
           <span>Already registered? </span>
-          <button onClick={handleLoginClick} className="font-bold text-blue-600 hover:underline">
+          <Link to="/" className="font-bold text-blue-600 hover:underline">
             Sign In Here
-          </button>
+          </Link>
         </div>
       </div>
     </div>
   );
 };
-

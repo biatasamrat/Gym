@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Member, PaymentRecord, CheckInLog, RenewalReminder, GymStats, SubscriptionDuration } from './types';
-import { INITIAL_MEMBERS, INITIAL_PAYMENTS, INITIAL_CHECKINS, DURATION_PRICES } from './mockData';
+import { DURATION_PRICES } from './mockData';
 import { AdminDashboard } from './components/AdminDashboard';
 import { MemberDashboard } from './components/MemberDashboard';
 import { MemberListTable } from './components/MemberListTable';
@@ -8,8 +9,9 @@ import { PaymentManagement } from './components/PaymentManagement';
 import { MemberModal } from './components/MemberModal';
 import { LoginPage } from './components/LoginPage';
 import { SignUpPage } from './components/SignUpPage';
-import { SupabaseSetupModal } from './components/SupabaseSetupModal';
+import { LandingPage } from './components/LandingPage';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { supabase } from './lib/supabase';
 
 import {
   Dumbbell,
@@ -27,109 +29,162 @@ import {
 } from 'lucide-react';
 
 function GymAppContent() {
-  const { user, logout, isSupabaseConnected } = useAuth();
+  const { user, logout, isSupabaseConnected, isLoading } = useAuth();
+  const location = useLocation();
 
-  const [authView, setAuthView] = useState<'login' | 'signup'>('login');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'members' | 'payments' | 'member_portal'>('dashboard');
-
-  const [members, setMembers] = useState<Member[]>(INITIAL_MEMBERS);
-  const [payments, setPayments] = useState<PaymentRecord[]>(INITIAL_PAYMENTS);
-  const [checkIns, setCheckIns] = useState<CheckInLog[]>(INITIAL_CHECKINS);
-  const [reminders, setReminders] = useState<RenewalReminder[]>([
-    {
-      id: 'rem-1',
-      memberId: 'm-1',
-      memberName: 'Aarav Sharma',
-      phone: '9841234567',
-      email: 'aarav.sharma@gmail.com',
-      subscriptionEndDate: '2026-08-10',
-      daysRemaining: 5,
-      status: 'sent',
-      channel: 'SMS',
-      lastSentAt: '2026-08-05 08:30 AM',
-      reminderType: '7_days_notice',
-    },
-  ]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [payments, setPayments] = useState<PaymentRecord[]>([]);
+  const [checkIns, setCheckIns] = useState<CheckInLog[]>([]);
+  const [reminders, setReminders] = useState<RenewalReminder[]>([]);
+  
+  const [isFetching, setIsFetching] = useState(false);
 
   // Modals
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+
+  // Fetch Data from Supabase
+  const fetchData = async () => {
+    if (!user || !supabase) return;
+    setIsFetching(true);
+
+    try {
+      // Fetch Profiles (Members)
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('*');
+      
+      if (profilesData) {
+        setMembers(profilesData.map(p => ({
+          id: p.id,
+          memberCode: p.member_code,
+          fullName: p.full_name,
+          email: p.email,
+          phone: p.phone,
+          gender: p.gender,
+          age: p.age,
+          joinDate: p.join_date,
+          subscriptionStartDate: p.subscription_start_date,
+          subscriptionEndDate: p.subscription_end_date,
+          currentDuration: p.current_duration as SubscriptionDuration,
+          paymentStatus: p.payment_status,
+          amountDue: p.amount_due,
+          emergencyContact: p.emergency_contact,
+          fitnessGoal: p.fitness_goal,
+          notes: p.notes,
+          lastPaymentDate: p.last_payment_date,
+        })));
+      }
+
+      // Fetch Payments
+      const { data: paymentsData } = await supabase
+        .from('payments')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (paymentsData) {
+        setPayments(paymentsData.map(p => ({
+          id: p.id,
+          memberId: p.member_id,
+          memberName: p.member_name,
+          amount: p.amount,
+          duration: p.duration as SubscriptionDuration,
+          paymentDate: p.payment_date,
+          paymentMethod: p.payment_method,
+          status: p.status,
+          receiptNumber: p.receipt_number,
+        })));
+      }
+
+      // Fetch Check-ins
+      const { data: checkInsData } = await supabase
+        .from('check_ins')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (checkInsData) {
+        setCheckIns(checkInsData.map(c => ({
+          id: c.id,
+          memberId: c.member_id,
+          memberName: c.member_name,
+          checkInTime: c.check_in_time,
+          notes: c.notes,
+        })));
+      }
+
+      // Fetch Reminders
+      const { data: remindersData } = await supabase
+        .from('reminders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (remindersData) {
+        setReminders(remindersData.map(r => ({
+          id: r.id,
+          memberId: r.member_id,
+          memberName: r.member_name,
+          phone: r.phone,
+          email: r.email,
+          subscriptionEndDate: r.subscription_end_date,
+          daysRemaining: r.days_remaining,
+          status: r.status,
+          channel: r.channel,
+          lastSentAt: r.last_sent_at,
+          reminderType: r.reminder_type,
+        })));
+      }
+      
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setIsFetching(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [user]);
+
 
   // Derive current member for member dashboard based on logged-in user
   const currentMember = useMemo(() => {
-    if (!user) return members[0];
-    const found = members.find(
-      (m) =>
-        m.email.toLowerCase() === user.email.toLowerCase() ||
-        (user.memberCode && m.memberCode === user.memberCode)
-    );
-
-    if (found) return found;
-
-    // Create virtual member profile for newly registered user if not in mock array
-    return {
-      id: user.id || 'm-new',
-      memberCode: user.memberCode || 'GYM-2026-999',
-      fullName: user.fullName || 'Member',
-      email: user.email,
-      phone: user.phone || '9841000000',
-      gender: 'Male',
-      age: 25,
-      emergencyContact: '9841000000 (Family)',
-      joinDate: '2026-08-05',
-      currentDuration: '3_months',
-      subscriptionStartDate: '2026-08-05',
-      subscriptionEndDate: '2026-11-05',
-      paymentStatus: 'paid',
-      amountDue: 0,
-      lastPaymentDate: '2026-08-05',
-      fitnessGoal: 'General Health & Fitness',
-      notes: 'Registered via Supabase Auth Portal',
-    } as Member;
+    if (!user) return null;
+    return members.find(m => m.id === user.id) || null;
   }, [user, members]);
-
-  // Sync tab on login
-  useEffect(() => {
-    if (user) {
-      if (user.role === 'admin') {
-        setActiveTab('dashboard');
-      } else {
-        setActiveTab('member_portal');
-      }
-    }
-  }, [user]);
 
   // Compute stats
   const stats: GymStats = useMemo(() => {
     const totalMembers = members.length;
     const activeMembers = members.filter((m) => m.paymentStatus === 'paid').length;
+    
+    // Simplistic count of expiring this week
     const expiringThisWeek = members.filter((m) => {
+      if (!m.subscriptionEndDate) return false;
       const end = new Date(m.subscriptionEndDate).getTime();
-      const today = new Date('2026-08-05').getTime();
+      const today = new Date().getTime();
       const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
       return diffDays >= 0 && diffDays <= 7;
     }).length;
 
     const overdueMembers = members.filter((m) => m.paymentStatus === 'overdue').length;
-    const pendingPaymentsAmount = members.reduce((acc, curr) => acc + curr.amountDue, 0);
-    const monthlyRevenue = payments.reduce((acc, curr) => acc + curr.amount, 0);
+    const pendingPaymentsAmount = members.reduce((acc, curr) => acc + (curr.amountDue || 0), 0);
+    const monthlyRevenue = payments.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
     return {
       totalMembers,
-      activeMembers,
-      expiringThisWeek,
-      overdueMembers,
-      pendingPaymentsAmount,
+      activeSubscriptions: activeMembers,
       monthlyRevenue,
+      pendingPayments: pendingPaymentsAmount,
+      totalCheckInsToday: checkIns.filter(c => new Date(c.checkInTime).toDateString() === new Date().toDateString()).length,
     };
-  }, [members, payments]);
+  }, [members, payments, checkIns]);
 
   // Expiring and Overdue lists
   const expiringMembers = useMemo(() => {
     return members.filter((m) => {
+      if (!m.subscriptionEndDate) return false;
       const end = new Date(m.subscriptionEndDate).getTime();
-      const today = new Date('2026-08-05').getTime();
+      const today = new Date().getTime();
       const diffDays = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
       return diffDays >= 0 && diffDays <= 7;
     });
@@ -140,127 +195,181 @@ function GymAppContent() {
   }, [members]);
 
   // Handlers
-  const handleSaveMember = (memberData: Partial<Member>) => {
+  const handleSaveMember = async (memberData: Partial<Member>) => {
+    if (!supabase) return;
+    
+    // In a real app, you might want to invite the user via auth.admin API 
+    // to create their auth record first if they don't exist.
+    // For this prototype, if it's an edit we just update the profile.
     if (editingMember) {
-      setMembers((prev) => prev.map((m) => (m.id === memberData.id ? ({ ...m, ...memberData } as Member) : m)));
-    } else {
-      const newMember = {
-        ...memberData,
-        id: `m-${Date.now()}`,
-      } as Member;
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: memberData.fullName,
+          phone: memberData.phone,
+          gender: memberData.gender,
+          age: memberData.age,
+          subscription_start_date: memberData.subscriptionStartDate,
+          subscription_end_date: memberData.subscriptionEndDate,
+          current_duration: memberData.currentDuration,
+          payment_status: memberData.paymentStatus,
+          amount_due: memberData.amountDue,
+          emergency_contact: memberData.emergencyContact,
+          fitness_goal: memberData.fitnessGoal,
+          notes: memberData.notes,
+        })
+        .eq('id', memberData.id);
 
-      setMembers((prev) => [newMember, ...prev]);
-
-      if (newMember.paymentStatus === 'paid') {
-        const newPay: PaymentRecord = {
-          id: `pay-${Date.now()}`,
-          memberId: newMember.id,
-          memberName: newMember.fullName,
-          amount: DURATION_PRICES[newMember.currentDuration],
-          duration: newMember.currentDuration,
-          paymentDate: newMember.subscriptionStartDate,
-          paymentMethod: 'eSewa',
-          status: 'paid',
-          receiptNumber: `REC-2026-${Math.floor(Math.random() * 8999) + 1000}`,
-        };
-        setPayments((prev) => [newPay, ...prev]);
+      if (!error) {
+        setMembers((prev) => prev.map((m) => (m.id === memberData.id ? ({ ...m, ...memberData } as Member) : m)));
+      } else {
+         console.error(error);
+         alert("Failed to update member.");
       }
+    } else {
+       // Cannot easily insert arbitrary users into profiles without auth user existing.
+       // The proper way is letting members sign up. 
+       // We'll show an alert for this flow.
+       alert("To add a new member, please ask them to use the Sign Up page, then you can edit their profile here.");
     }
 
     setIsMemberModalOpen(false);
     setEditingMember(null);
   };
 
-  const handleSendReminder = (memberId: string) => {
+  const handleSendReminder = async (memberId: string) => {
+    if (!supabase) return;
     const member = members.find((m) => m.id === memberId);
     if (!member) return;
 
-    const newRem: RenewalReminder = {
-      id: `rem-${Date.now()}`,
-      memberId: member.id,
-      memberName: member.fullName,
+    const { data, error } = await supabase.from('reminders').insert({
+      member_id: member.id,
+      member_name: member.fullName,
       phone: member.phone,
       email: member.email,
-      subscriptionEndDate: member.subscriptionEndDate,
-      daysRemaining: 5,
+      subscription_end_date: member.subscriptionEndDate,
+      days_remaining: 5,
       status: 'sent',
       channel: 'SMS',
-      lastSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' Today',
-      reminderType: '7_days_notice',
-    };
+      reminder_type: '7_days_notice',
+      last_sent_at: new Date().toISOString()
+    }).select().single();
 
-    setReminders((prev) => [newRem, ...prev]);
-    alert(`Automated SMS & Email Renewal Reminder sent to ${member.fullName} (${member.phone})!`);
+    if (!error && data) {
+      setReminders((prev) => [{
+        id: data.id,
+        memberId: data.member_id,
+        memberName: data.member_name,
+        phone: data.phone,
+        email: data.email,
+        subscriptionEndDate: data.subscription_end_date,
+        daysRemaining: data.days_remaining,
+        status: data.status,
+        channel: data.channel,
+        lastSentAt: data.last_sent_at,
+        reminderType: data.reminder_type,
+      }, ...prev]);
+      alert(`Reminder sent to ${member.fullName}!`);
+    } else {
+      console.error(error);
+    }
   };
 
-  const handleCheckInNow = (memberId: string) => {
+  const handleCheckInNow = async (memberId: string) => {
+    if (!supabase) return;
     const member = members.find((m) => m.id === memberId) || currentMember;
+    if (!member) return;
 
-    const newCheckIn: CheckInLog = {
-      id: `chk-${Date.now()}`,
-      memberId: member.id,
-      memberName: member.fullName,
-      checkInTime: new Date().toLocaleString(),
-      notes: 'Self-Service Check-In at Front Desk',
-    };
+    const { data, error } = await supabase.from('check_ins').insert({
+      member_id: member.id,
+      member_name: member.fullName,
+      notes: 'Self-Service Check-In at Front Desk'
+    }).select().single();
 
-    setCheckIns((prev) => [newCheckIn, ...prev]);
-    alert(`Gym check-in logged successfully for ${member.fullName}!`);
+    if (!error && data) {
+      setCheckIns((prev) => [{
+         id: data.id,
+         memberId: data.member_id,
+         memberName: data.member_name,
+         checkInTime: data.check_in_time,
+         notes: data.notes
+      }, ...prev]);
+      alert(`Check-in logged for ${member.fullName}!`);
+    } else {
+       console.error(error);
+    }
   };
 
-  const handleAddPaymentRecord = (paymentData: Partial<PaymentRecord>) => {
-    const newPay = {
-      ...paymentData,
-      id: `pay-${Date.now()}`,
-    } as PaymentRecord;
+  const handleAddPaymentRecord = async (paymentData: Partial<PaymentRecord>) => {
+    if (!supabase) return;
 
-    setPayments((prev) => [newPay, ...prev]);
+    const { data, error } = await supabase.from('payments').insert({
+      member_id: paymentData.memberId,
+      member_name: paymentData.memberName,
+      amount: paymentData.amount,
+      duration: paymentData.duration,
+      payment_date: paymentData.paymentDate,
+      payment_method: paymentData.paymentMethod,
+      status: paymentData.status,
+      receipt_number: `REC-${Date.now()}`
+    }).select().single();
 
-    setMembers((prev) =>
-      prev.map((m) => (m.id === newPay.memberId ? { ...m, paymentStatus: 'paid', amountDue: 0 } : m))
-    );
+    if (!error && data) {
+      // Also update member status
+      await supabase.from('profiles').update({
+         payment_status: 'paid',
+         amount_due: 0,
+         last_payment_date: data.payment_date
+      }).eq('id', data.member_id);
+
+      fetchData(); // Refresh everything to be safe
+    } else {
+       console.error(error);
+    }
   };
 
-  const handleMemberPaymentSuccess = (payment: PaymentRecord, newDuration: SubscriptionDuration, newEndDate: string) => {
-    setPayments((prev) => [payment, ...prev]);
+  const handleMemberPaymentSuccess = async (payment: PaymentRecord, newDuration: SubscriptionDuration, newEndDate: string) => {
+    if (!supabase || !currentMember) return;
 
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.id === payment.memberId || (user && m.email.toLowerCase() === user.email.toLowerCase())
-          ? {
-              ...m,
-              currentDuration: newDuration,
-              subscriptionEndDate: newEndDate,
-              paymentStatus: 'paid',
-              amountDue: 0,
-              lastPaymentDate: payment.paymentDate,
-            }
-          : m
-      )
-    );
+    const { error: payError } = await supabase.from('payments').insert({
+      member_id: currentMember.id,
+      member_name: currentMember.fullName,
+      amount: payment.amount,
+      duration: newDuration,
+      payment_date: payment.paymentDate,
+      payment_method: payment.paymentMethod,
+      status: 'paid',
+      receipt_number: `REC-${Date.now()}`
+    });
+
+    if (!payError) {
+      await supabase.from('profiles').update({
+         current_duration: newDuration,
+         subscription_end_date: newEndDate,
+         payment_status: 'paid',
+         amount_due: 0,
+         last_payment_date: payment.paymentDate
+      }).eq('id', currentMember.id);
+      
+      fetchData();
+      alert("Payment Successful!");
+    }
   };
+
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-100">Loading Session...</div>;
+  }
 
   // IF NOT AUTHENTICATED -> Display Login / SignUp Pages
   if (!user) {
     return (
-      <>
-        {authView === 'login' ? (
-          <LoginPage
-            onNavigateToSignUp={() => setAuthView('signup')}
-            onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-          />
-        ) : (
-          <SignUpPage
-            onNavigateToLogin={() => setAuthView('login')}
-            onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-          />
-        )}
-
-        <SupabaseSetupModal
-          isOpen={isSupabaseModalOpen}
-          onClose={() => setIsSupabaseModalOpen(false)}
-        />
-      </>
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login/admin" element={<LoginPage />} />
+        <Route path="/login/member" element={<LoginPage />} />
+        <Route path="/register" element={<SignUpPage />} />
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
     );
   }
 
@@ -291,68 +400,55 @@ function GymAppContent() {
           <div className="hidden md:flex items-center space-x-1">
             {user.role === 'admin' ? (
               <>
-                <button
-                  onClick={() => setActiveTab('dashboard')}
+                <Link
+                  to="/admin/dashboard"
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-2 ${
-                    activeTab === 'dashboard'
+                    location.pathname === '/admin/dashboard'
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   <LayoutDashboard className="w-4 h-4" />
                   <span>Admin Dashboard</span>
-                </button>
+                </Link>
 
-                <button
-                  onClick={() => setActiveTab('members')}
+                <Link
+                  to="/admin/members"
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-2 ${
-                    activeTab === 'members'
+                    location.pathname === '/admin/members'
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   <Users className="w-4 h-4" />
                   <span>Members Directory</span>
-                </button>
+                </Link>
 
-                <button
-                  onClick={() => setActiveTab('payments')}
+                <Link
+                  to="/admin/payments"
                   className={`px-4 py-2 rounded-xl text-xs font-semibold transition flex items-center space-x-2 ${
-                    activeTab === 'payments'
+                    location.pathname === '/admin/payments'
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
                   <CreditCard className="w-4 h-4" />
                   <span>Payments & Receipts</span>
-                </button>
+                </Link>
               </>
             ) : (
-              <button
-                onClick={() => setActiveTab('member_portal')}
+              <Link
+                to="/member/portal"
                 className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-xl text-xs shadow-sm flex items-center space-x-2"
               >
                 <UserCheck className="w-4 h-4" />
                 <span>My Gym Membership Portal</span>
-              </button>
+              </Link>
             )}
           </div>
 
           {/* Right Action Bar */}
           <div className="flex items-center space-x-2.5">
-            
-            {/* Supabase Status Indicator */}
-            <button
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-semibold transition hidden lg:flex items-center space-x-1.5"
-              title="View Supabase Setup SQL"
-            >
-              <Database className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-[11px]">
-                {isSupabaseConnected ? 'Supabase Connected' : 'Supabase Setup'}
-              </span>
-            </button>
-
             {/* User Profile Badge & Logout */}
             <div className="flex items-center space-x-2 bg-slate-800 p-1.5 rounded-2xl border border-slate-700">
               <div className="flex items-center space-x-2 px-2">
@@ -378,9 +474,7 @@ function GymAppContent() {
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
-
           </div>
-
         </div>
       </header>
 
@@ -412,73 +506,87 @@ function GymAppContent() {
               </span>
             ) : (
               <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl">
-                Personal Member Portal ({currentMember.memberCode})
+                Personal Member Portal ({user.memberCode || 'Pending'})
               </span>
             )}
           </div>
         </div>
 
-        {/* Admin Views */}
-        {user.role === 'admin' && activeTab === 'dashboard' && (
-          <AdminDashboard
-            stats={stats}
-            members={members}
-            payments={payments}
-            checkIns={checkIns}
-            expiringMembers={expiringMembers}
-            overdueMembers={overdueMembers}
-            reminders={reminders}
-            onSelectMember={(m) => {
-              setActiveTab('members');
-            }}
-            onSendReminder={handleSendReminder}
-            onOpenAddMember={() => {
-              setEditingMember(null);
-              setIsMemberModalOpen(true);
-            }}
-            onOpenAddMemberModal={() => {
-              setEditingMember(null);
-              setIsMemberModalOpen(true);
-            }}
-          />
-        )}
+        {isFetching ? (
+           <div className="text-center text-slate-500 py-12">Syncing data with Supabase...</div>
+        ) : (
+          <>
+            <Routes>
+              {user.role === 'admin' ? (
+                <>
+                  <Route path="/admin/dashboard" element={
+                    <AdminDashboard
+                      stats={stats}
+                      members={members}
+                      payments={payments}
+                      checkIns={checkIns}
+                      expiringMembers={expiringMembers}
+                      overdueMembers={overdueMembers}
+                      reminders={reminders}
+                      onSelectMember={(m) => { /* handled via links now, or we can leave as is */ }}
+                      onSendReminder={handleSendReminder}
+                      onOpenAddMember={() => {
+                        setEditingMember(null);
+                        setIsMemberModalOpen(true);
+                      }}
+                      onOpenAddMemberModal={() => {
+                        setEditingMember(null);
+                        setIsMemberModalOpen(true);
+                      }}
+                    />
+                  } />
 
-        {user.role === 'admin' && activeTab === 'members' && (
-          <MemberListTable
-            members={members}
-            onSelectMember={(m) => {
-              // Edit or inspect member
-            }}
-            onOpenAddModal={() => {
-              setEditingMember(null);
-              setIsMemberModalOpen(true);
-            }}
-            onEditMember={(m) => {
-              setEditingMember(m);
-              setIsMemberModalOpen(true);
-            }}
-          />
-        )}
+                  <Route path="/admin/members" element={
+                    <MemberListTable
+                      members={members}
+                      onSelectMember={(m) => {}}
+                      onOpenAddModal={() => {
+                        setEditingMember(null);
+                        setIsMemberModalOpen(true);
+                      }}
+                      onEditMember={(m) => {
+                        setEditingMember(m);
+                        setIsMemberModalOpen(true);
+                      }}
+                    />
+                  } />
 
-        {user.role === 'admin' && activeTab === 'payments' && (
-          <PaymentManagement
-            payments={payments}
-            members={members}
-            onAddPayment={handleAddPaymentRecord}
-          />
+                  <Route path="/admin/payments" element={
+                    <PaymentManagement
+                      payments={payments}
+                      members={members}
+                      onAddPayment={handleAddPaymentRecord}
+                    />
+                  } />
+                  
+                  <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+                </>
+              ) : (
+                <>
+                  <Route path="/member/portal" element={
+                    currentMember ? (
+                      <MemberDashboard
+                        member={currentMember}
+                        checkIns={checkIns}
+                        payments={payments}
+                        onCheckInNow={handleCheckInNow}
+                        onPaymentSuccess={handleMemberPaymentSuccess}
+                      />
+                    ) : (
+                      <div className="p-8 text-center text-slate-500">Loading Member Profile...</div>
+                    )
+                  } />
+                  <Route path="*" element={<Navigate to="/member/portal" replace />} />
+                </>
+              )}
+            </Routes>
+          </>
         )}
-
-        {/* Member View */}
-        {user.role === 'member' && (
-          <MemberDashboard
-            member={currentMember}
-            checkIns={checkIns}
-            payments={payments}
-            onCheckInNow={handleCheckInNow}
-            onPaymentSuccess={handleMemberPaymentSuccess}
-          />
-        )}
-
       </main>
 
       {/* Footer */}
@@ -503,13 +611,6 @@ function GymAppContent() {
         onClose={() => setIsMemberModalOpen(false)}
         onSave={handleSaveMember}
       />
-
-      {/* Supabase Database Setup Modal */}
-      <SupabaseSetupModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-      />
-
     </div>
   );
 }
