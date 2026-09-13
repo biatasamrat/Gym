@@ -18,6 +18,8 @@ export const LoginPage: React.FC = () => {
     const res = await loginWithCredentials(email, password);
     if (!res.success && res.error) {
       setErrorMessage(res.error);
+    } else if (res.success && !res.user) {
+      setErrorMessage("Login successful, but failed to load your profile. Please check the browser console for exact errors (F12 -> Console). This is usually an RLS infinite recursion issue.");
     } else {
       // Assuming successful login sets user context, which will then trigger redirect in App.tsx
       // We can navigate explicitly as well if needed.
