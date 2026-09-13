@@ -127,12 +127,22 @@ export const MemberListTable: React.FC<MemberListTableProps> = ({
                       <div className="text-[10px] text-rose-600 font-semibold mt-0.5">Due: NPR {m.amountDue?.toLocaleString()}</div>
                     )}
                   </td>
-                  <td className="px-5 py-3.5 text-right">
+                  <td className="px-5 py-3.5 text-right flex justify-end space-x-2">
                     <button
                       onClick={() => onEditMember && onEditMember(m)}
                       className="px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition"
                     >
                       Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Are you sure you want to delete ${m.fullName}?`)) {
+                          onDeleteMember && onDeleteMember(m.id);
+                        }
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition"
+                    >
+                      Delete
                     </button>
                   </td>
                 </tr>

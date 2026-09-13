@@ -237,6 +237,18 @@ function GymAppContent() {
     setEditingMember(null);
   };
 
+  const handleDeleteMember = async (id: string) => {
+    if (!supabase) return;
+    const { error } = await supabase.from('profiles').delete().eq('id', id);
+    
+    if (!error) {
+      setMembers((prev) => prev.filter((m) => m.id !== id));
+    } else {
+      console.error(error);
+      alert("Failed to delete member.");
+    }
+  };
+
   const handleSendReminder = async (memberId: string) => {
     if (!supabase) return;
     const member = members.find((m) => m.id === memberId);
@@ -553,6 +565,7 @@ function GymAppContent() {
                         setEditingMember(m);
                         setIsMemberModalOpen(true);
                       }}
+                      onDeleteMember={handleDeleteMember}
                     />
                   } />
 
